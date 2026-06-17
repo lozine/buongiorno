@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusChat Cloud</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        :root {
+            --bg-dark-main: #0b0f17;
+            --bg-dark-sidebar: #131b2e;
+            --bg-dark-panel: #1e293b;
+            --accent-color: #4f46e5;
+            --accent-hover: #4338ca;
+            --text-light: #f8fafc;
+            --text-gray: #94a3b8;
+            --border-line: #334155;
+            --chat-me: #312e81;
+            --chat-them: #1e293b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: var(--bg-dark-main); color: var(--text-light); height: 100vh; display: flex; overflow: hidden; }
+
+        .modal-backdrop { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(7, 10, 18, 0.85); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+        .window-card { background: var(--bg-dark-sidebar); border: 1px solid var(--border-line); border-radius: 16px; padding: 2rem; width: 100%; max-width: 440px; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); position: relative; }
+        .window-card h2, .window-card h3 { margin-bottom: 1.2rem; font-size: 1.4rem; letter-spacing: -0.5px; color: var(--text-light); }
+        .window-card label { display: block; text-align: left; margin-bottom: 4px; font-size: 0.85rem; color: var(--text-gray); }
+
+        .avatar-setup-zone { position: relative; width: 100px; height: 100px; margin: 0 auto 1.5rem; }
+        .avatar-main-view { width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 3px solid var(--accent-color); background: #2b3952; }
+        .avatar-edit-badge { position: absolute; bottom: 0; right: 0; background: var(--accent-color); padding: 8px; border-radius: 50%; cursor: pointer; display: flex; }
+
+        .form-input { width: 100%; padding: 12px 16px; background: var(--bg-dark-main); border: 1px solid var(--border-line); border-radius: 8px; color: var(--text-light); font-size: 0.95rem; margin-bottom: 1rem; outline: none; }
+        .form-input:focus { border-color: var(--accent-color); }
+        
+        .action-button { padding: 11px 20px; background: var(--accent-color); color: #fff; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+        .action-button:hover { background: var(--accent-hover); }
+        .secondary-button { background: transparent; border: 1px solid var(--border-line); color: var(--text-light); }
+        .secondary-button:hover { background: rgba(255,255,255,0.05); }
+        .add-friend-btn { background: var(--accent-color); font-size: 0.85rem; font-weight: 600; border-radius: 6px; padding: 6px 12px; color: white; border: none; cursor: pointer; }
+        .add-friend-btn:hover { background: var(--accent-hover); }
+
+        .workspace { display: flex; width: 100vw; height: 100vh; }
+        .sidebar-panel { width: 340px; background: var(--bg-dark-sidebar); border-right: 1px solid var(--border-line); display: flex; flex-direction: column; }
+        
+        .sidebar-profile-bar { padding: 1rem; border-bottom: 1px solid var(--border-line); display: flex; align-items: center; justify-content: space-between; }
+        .identity-slot { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+        .identity-slot img { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent-color); }
+        .identity-slot span { font-weight: 600; font-size: 0.95rem; }
+
+        .list-container { flex: 1; overflow-y: auto; padding: 0.5rem 0; }
+        .friend-row { display: flex; align-items: center; justify-content: space-between; padding: 0.8rem 1rem; cursor: pointer; transition: background 0.15s; border-radius: 8px; margin: 2px 8px; position: relative; }
+        .friend-row:hover, .friend-row.active { background: rgba(79, 70, 229, 0.15); }
+        .friend-flex-info { display: flex; align-items: center; gap: 12px; }
+        .friend-row img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
+        
+        .req-btn { border: none; padding: 6px 10px; border-radius: 4px; color: white; font-size: 0.75rem; cursor: pointer; font-weight: 600; }
+        .req-btn.accept { background: #10b981; }
+        .req-btn.reject { background: #ef4444; }
+        .trash-friend-icon { color: var(--text-gray); cursor: pointer; opacity: 0; transition: opacity 0.2s; display: inline-flex; padding: 6px; }
+        .friend-row:hover .trash-friend-icon { opacity: 1; }
+        .trash-friend-icon:hover { color: #ef4444; }
+
+        /* Badge Conteggio Notifiche */
+        .unread-badge-counter { background: #ef4444; color: white; font-size: 0.75rem; font-weight: bold; border-radius: 10px; padding: 2px 7px; min-width: 18px; text-align: center; display: inline-block; }
+
+        .chat-panel { flex: 1; display: flex; flex-direction: column; background: var(--bg-dark-main); }
+        .chat-view-header { padding: 1rem 1.5rem; background: var(--bg-dark-sidebar); border-bottom: 1px solid var(--border-line); display: flex; align-items: center; justify-content: space-between; }
+        .chat-header-user { display: flex; align-items: center; gap: 14px; }
+        .chat-header-user img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
+        
+        .messages-flow { flex: 1; padding: 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+        .bubble-row { display: flex; width: 100%; margin: 2px 0; }
+        .bubble-row.me { justify-content: flex-end; }
+        .bubble-row.them { justify-content: flex-start; }
+        
+        .bubble-wrapper { max-width: 65%; padding: 10px 14px; border-radius: 12px; font-size: 0.95rem; position: relative; word-wrap: break-word; display: flex; flex-direction: column; }
+        .bubble-row.me .bubble-wrapper { background: var(--chat-me); border-bottom-right-radius: 2px; }
+        .bubble-row.them .bubble-wrapper { background: var(--chat-them); border-bottom-left-radius: 2px; }
+        
+        .msg-meta-line { display: flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 0.7rem; color: var(--text-gray); margin-top: 5px; }
+        
+        /* Stili Grafici Assegnati alle Spunte */
+        .status-spunta { font-weight: bold; font-size: 0.8rem; letter-spacing: -1px; }
+        .status-spunta.spunta-grigia-singola { color: #64748b; }
+        .status-spunta.spunta-grigia-doppia { color: #94a3b8; }
+        .status-spunta.spunta-blu-doppia { color: #38bdf8; }
+
+        .trash-msg-icon { align-self: flex-end; margin-left: 8px; color: var(--text-gray); cursor: pointer; opacity: 0; transition: opacity 0.2s; display: inline-flex; }
+        .bubble-wrapper:hover .trash-msg-icon { opacity: 1; }
+        .trash-msg-icon:hover { color: #ef4444; }
+
+        .custom-audio-player { display: flex; align-items: center; gap: 12px; background: rgba(0, 0, 0, 0.25); padding: 8px 14px; border-radius: 10px; min-width: 240px; margin-top: 4px; border: 1px solid rgba(255,255,255,0.05); }
+        .audio-play-btn { background: var(--accent-color); border: none; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; color: white; cursor: pointer; font-size: 0.9rem; }
+        .audio-waveform { flex: 1; height: 5px; background: rgba(255,255,255,0.15); position: relative; border-radius: 3px; overflow: hidden; }
+        .audio-progress-bar { height: 100%; width: 0%; background: var(--accent-color); }
+
+        .chat-footer-input { padding: 1rem 1.5rem; background: var(--bg-dark-sidebar); border-top: 1px solid var(--border-line); display: flex; align-items: center; gap: 14px; }
+        .media-actions { display: flex; gap: 10px; }
+        .media-trigger { background: transparent; border: none; color: var(--text-gray); cursor: pointer; padding: 6px; border-radius: 50%; display: flex; }
+        .media-trigger:hover { color: var(--text-light); }
+        .media-trigger.recording { color: #ef4444; animation: pulseRecord 1s infinite alternate; }
+        @keyframes pulseRecord { from { opacity: 1; } to { opacity: 0.3; } }
+        .main-input-box { flex: 1; padding: 14px; background: var(--bg-dark-main); border: 1px solid var(--border-line); color: var(--text-light); border-radius: 10px; outline: none; }
+
+        .preview-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.95); display: flex; align-items: center; justify-content: center; z-index: 10000; }
+        .preview-content-media { max-width: 85%; max-height: 85%; border-radius: 8px; }
+        .close-preview-x { position: absolute; top: 20px; right: 30px; font-size: 2.5rem; color: white; cursor: pointer; }
+
+        .chat-media-preview { max-width: 240px; max-height: 200px; border-radius: 8px; margin-top: 6px; display: block; cursor: pointer; object-fit: cover; }
+        .hidden { display: none !important; }
+        .empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-gray); }
+
+        .search-preview-box { background: var(--bg-dark-main); border: 1px solid var(--border-line); border-radius: 10px; padding: 1rem; margin-top: 1rem; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+        .search-preview-box img { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent-color); }
+    </style>
+</head>
+<body>
+
+    <div id="authModal" class="modal-backdrop">
+        <div class="window-card">
+            <h2 id="authTitle">NexusChat Account</h2>
+            <div id="avatarSetupContainer">
+                <div class="avatar-setup-zone">
+                    <img id="avatarDisplay" class="avatar-main-view" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2394a3b8'><path d='M12 12c2.21 0 4-1.79 4-4s1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5-3.33-8-3.33z'/></svg>">
+                    <label class="avatar-edit-badge" for="avatarFileInput">
+                        <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M4 4h3l2-2h6l2 2h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2m8 3a5 5 0 0 0-5 5 5 5 0 0 0 5 5 5 5 0 0 0 5-5z"/></svg>
+                    </label>
+                </div>
+                <input type="file" id="avatarFileInput" accept="image/*" class="hidden" onchange="directUploadAvatar(event, 'avatarDisplay')">
+            </div>
+            <input type="text" id="authUsername" class="form-input" placeholder="Username...">
+            <input type="password" id="authPassword" class="form-input" placeholder="Password...">
+            <button class="action-button" id="mainAuthBtn" style="width:100%;" onclick="submitAuth()">Registrati ed Entra</button>
+            <p id="toggleAuthModeStr" style="margin-top:1.2rem; font-size:0.85rem; color:var(--text-gray); cursor:pointer;" onclick="switchAuthMode()">Hai già un account? Accedi qui</p>
+        </div>
+    </div>
+
+    <div id="editProfileModal" class="modal-backdrop hidden" onclick="this.classList.add('hidden')">
+        <div class="window-card" onclick="event.stopPropagation()">
+            <h3>Impostazioni Profilo</h3>
+            <div class="avatar-setup-zone">
+                <img id="editAvatarDisplay" class="avatar-main-view" src="">
+                <label class="avatar-edit-badge" for="editAvatarFileInput">
+                    <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M4 4h3l2-2h6l2 2h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2m8 3a5 5 0 0 0-5 5 5 5 0 0 0 5 5 5 5 0 0 0 5-5z"/></svg>
+                </label>
+            </div>
+            <input type="file" id="editAvatarFileInput" accept="image/*" class="hidden" onchange="directUploadAvatar(event, 'editAvatarDisplay')">
+            <label>Modifica Username:</label>
+            <input type="text" id="editUsernameField" class="form-input" placeholder="Nuovo Username">
+            <div style="border-top: 1px solid var(--border-line); margin-top:1rem; padding-top:1rem;">
+                <label style="font-weight:600;">Cambia Password:</label>
+                <input type="password" id="oldPassField" class="form-input" placeholder="Vecchia Password" style="margin-top: 6px;">
+                <input type="password" id="newPassField" class="form-input" placeholder="Nuova Password">
+            </div>
+            <div style="display:flex; gap:12px; margin-top:0.5rem;">
+                <button class="action-button" style="flex:1;" onclick="submitFullProfileUpdate()">Salva Modifiche</button>
+                <button class="action-button secondary-button" onclick="document.getElementById('editProfileModal').classList.add('hidden')">Annulla</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="addFriendModal" class="modal-backdrop hidden" onclick="this.classList.add('hidden')">
+        <div class="window-card" onclick="event.stopPropagation()">
+            <h3>Cerca Amico</h3>
+            <div style="display:flex; gap:8px;">
+                <input type="text" id="searchFriendInput" class="form-input" placeholder="Username esatto..." style="margin-bottom:0;">
+                <button class="action-button" onclick="searchUserPreviewBeforeSend()">Cerca</button>
+            </div>
+            <div id="searchPreviewWrapper" class="search-preview-box hidden">
+                <img id="previewUserImg" src="">
+                <strong id="previewUserName">-</strong>
+                <button class="action-button" style="width:100%; margin-top:5px;" id="confirmSendReqBtn">Invia Richiesta di Amicizia</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="customConfirmModal" class="modal-backdrop hidden">
+        <div class="window-card" style="max-width: 380px;">
+            <h3 id="confirmModalTitle">Sei sicuro?</h3>
+            <p id="confirmModalText" style="color: var(--text-gray); font-size: 0.9rem; margin-bottom: 1.5rem; text-align:center;"></p>
+            <div style="display:flex; gap:12px;">
+                <button class="action-button" style="background:#ef4444; flex:1;" id="confirmModalYesBtn">Conferma</button>
+                <button class="action-button secondary-button" style="flex:1;" onclick="document.getElementById('customConfirmModal').classList.add('hidden')">Annulla</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="mediaPreviewOverlay" class="preview-overlay hidden" onclick="this.classList.add('hidden')">
+        <span class="close-preview-x">&times;</span>
+        <div id="mediaPreviewContent" onclick="event.stopPropagation()"></div>
+    </div>
+
+    <div class="workspace">
+        <aside class="sidebar-panel">
+            <div class="sidebar-profile-bar">
+                <div class="identity-slot" onclick="openProfileSettingsWindow()">
+                    <img id="mySidebarImg" src="">
+                    <span id="mySidebarName">-</span>
+                </div>
+                <button class="add-friend-btn" onclick="openAddFriendModal()">+ Aggiungi</button>
+            </div>
+            <div class="list-container" id="friendsContainer"></div>
+        </aside>
+
+        <main class="chat-panel">
+            <div id="blankState" class="empty-state">
+                <h2>Nessuna chat attiva</h2>
+                <p>Seleziona un amico o effettua una ricerca per iniziare.</p>
+            </div>
+
+            <div id="activeChatWindow" class="chat-panel hidden">
+                <div class="chat-view-header">
+                    <div class="chat-header-user">
+                        <img id="chatHeaderImg" src="">
+                        <h4 id="chatHeaderTitle">-</h4>
+                    </div>
+                    <button class="add-friend-btn" style="background:#ef4444;" onclick="triggerClearChatDialog()">Svuota Chat</button>
+                </div>
+                
+                <div class="messages-flow" id="chatScrollArea"></div>
+
+                <div class="chat-footer-input">
+                    <div class="media-actions">
+                        <button class="media-trigger" onclick="document.getElementById('fileAttachmentInput').click()">
+                            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-3.31 2.69-6 6-6s6 2.69 6 6v10c0 4.42-3.58 8-8 8s-8-3.58-8-8V6h2v9c0 3.31 2.69 6 6 6s6-2.69 6-6V5c0-2.21-1.79-4-4-4s-4 1.79-4 4v12.5c0 1.1.9 2 2 2s2-.9 2-2V6h2z"/></svg>
+                        </button>
+                        <input type="file" id="fileAttachmentInput" class="hidden" onchange="uploadAttachment(event)">
+
+                        <button class="media-trigger" id="audioMicBtn" onclick="toggleAudioRecording()">
+                            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
+                        </button>
+                    </div>
+                    <input type="text" id="messageWriteBox" class="main-input-box" placeholder="Scrivi un messaggio..." onkeydown="if(event.key === 'Enter') dispatchText()">
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const socket = io();
+
+        let myIdentity = null;
+        let isRegisteringMode = true;
+        
+        let friendsData = {}; 
+        let chatLogs = {};     
+        let activeChatUser = null;
+        let globalOnlineUsers = [];
+
+        let recStream, mediaRecorder, audioChunks = [], isVoiceRecording = false;
+
+        window.onload = function() {
+            const savedSession = localStorage.getItem('nx_active_user_session');
+            if(savedSession) {
+                const credential = JSON.parse(savedSession);
+                socket.emit('authenticate', { username: credential.username, password: credential.password, isRegistering: false }, (res) => {
+                    if(res.success) {
+                        initializeAccountSession(res.user, credential.password);
+                    } else {
+                        localStorage.removeItem('nx_active_user_session');
+                    }
+                });
+            }
+        };
+
+        function initializeAccountSession(userObj, accountPassword) {
+            myIdentity = userObj;
+            localStorage.setItem('nx_active_user_session', JSON.stringify({ username: myIdentity.username, password: accountPassword }));
+            
+            document.getElementById('authModal').classList.add('hidden');
+            document.getElementById('mySidebarName').innerText = myIdentity.username;
+            document.getElementById('mySidebarImg').src = myIdentity.avatar;
+
+            syncDataFromServer();
+        }
+
+        function syncDataFromServer() {
+            if(!myIdentity) return;
+            socket.emit('request_db_sync', (cloudData) => {
+                friendsData = cloudData.friends;
+                chatLogs = cloudData.chats;
+                
+                socket.emit('get_online_statuses', (list) => { 
+                    globalOnlineUsers = list; 
+                    renderFriendsSidebar(); 
+                    if(activeChatUser) {
+                        renderActiveMessages();
+                    }
+                });
+            });
+        }
+
+        socket.on('sync_database_update', () => {
+            syncDataFromServer();
+        });
+
+        function directUploadAvatar(e, targetImgId) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const r = new FileReader();
+            r.onload = function(evt) {
+                document.getElementById(targetImgId).src = evt.target.result;
+            }
+            r.readAsDataURL(file);
+        }
+
+        function switchAuthMode() {
+            isRegisteringMode = !isRegisteringMode;
+            document.getElementById('authTitle').innerText = isRegisteringMode ? "NexusChat Account" : "Accedi al tuo Account";
+            document.getElementById('mainAuthBtn').innerText = isRegisteringMode ? "Registrati ed Entra" : "Effettua il Login";
+            document.getElementById('avatarSetupContainer').style.display = isRegisteringMode ? "block" : "none";
+            document.getElementById('toggleAuthModeStr').innerText = isRegisteringMode ? "Hai già un account? Accedi qui" : "Nuovo utente? Crea un profilo unico";
+        }
+
+        function submitAuth() {
+            const username = document.getElementById('authUsername').value.trim();
+            const password = document.getElementById('authPassword').value;
+            const avatar = document.getElementById('avatarDisplay').src;
+
+            if(!username || !password) return triggerAlertDialog("Compila tutti i campi richiesti.");
+
+            socket.emit('authenticate', { username, password, avatar, isRegistering: isRegisteringMode }, (res) => {
+                if(res.success) {
+                    initializeAccountSession(res.user, password);
+                } else {
+                    triggerAlertDialog(res.error);
+                }
+            });
+        }
+
+        function openProfileSettingsWindow() {
+            document.getElementById('editUsernameField').value = myIdentity.username;
+            document.getElementById('editAvatarDisplay').src = myIdentity.avatar;
+            document.getElementById('oldPassField').value = "";
+            document.getElementById('newPassField').value = "";
+            document.getElementById('editProfileModal').classList.remove('hidden');
+        }
+
+        function submitFullProfileUpdate() {
+            const newUsername = document.getElementById('editUsernameField').value.trim();
+            const oldPassword = document.getElementById('oldPassField').value;
+            const newPassword = document.getElementById('newPassField').value;
+            const avatar = document.getElementById('editAvatarDisplay').src;
+
+            if(!newUsername) return triggerAlertDialog("L'username non può essere vuoto.");
+
+            socket.emit('update_full_profile', { newUsername, oldPassword, newPassword, avatar }, (res) => {
+                if(res.success) {
+                    const activeSession = JSON.parse(localStorage.getItem('nx_active_user_session'));
+                    initializeAccountSession(res.user, newPassword ? newPassword : activeSession.password);
+                    document.getElementById('editProfileModal').classList.add('hidden');
+                } else {
+                    triggerAlertDialog(res.error);
+                }
+            });
+        }
+
+        function openAddFriendModal() {
+            document.getElementById('searchFriendInput').value = "";
+            document.getElementById('searchPreviewWrapper').classList.add('hidden');
+            document.getElementById('addFriendModal').classList.remove('hidden');
+        }
+
+        function searchUserPreviewBeforeSend() {
+            const target = document.getElementById('searchFriendInput').value.trim();
+            if(!target) return;
+
+            socket.emit('search_user_preview', target, (res) => {
+                if(res.success) {
+                    document.getElementById('previewUserImg').src = res.user.avatar;
+                    document.getElementById('previewUserName').innerText = res.user.username;
+                    document.getElementById('searchPreviewWrapper').classList.remove('hidden');
+                    
+                    document.getElementById('confirmSendReqBtn').onclick = function() {
+                        executeFriendRequestEmission(res.user.username);
+                    };
+                } else {
+                    triggerAlertDialog(res.error);
+                    document.getElementById('searchPreviewWrapper').classList.add('hidden');
+                }
+            });
+        }
+
+        function executeFriendRequestEmission(targetVerifiedName) {
+            socket.emit('send_friend_request', targetVerifiedName, (res) => {
+                if(res.success) {
+                    document.getElementById('addFriendModal').classList.add('hidden');
+                    syncDataFromServer();
+                } else {
+                    triggerAlertDialog(res.error);
+                }
+            });
+        }
+
+        function cancelSentRequestStream(name) {
+            socket.emit('cancel_sent_request', name);
+        }
+
+        function handleRequestDecision(name, accept) {
+            socket.emit('respond_friend_request', { senderName: name, accept: accept });
+        }
+
+        function triggerRemoveFriendDialog(name) {
+            triggerCustomConfirmDialog(
+                "Elimina Amico",
+                `Sei sicuro di voler rimuovere ${name} dalla tua lista amici? La cronologia chat rimarrà salvata.`,
+                () => {
+                    socket.emit('remove_friend', name);
+                    if(activeChatUser === name) {
+                        activeChatUser = null;
+                        socket.emit('set_active_chat', null);
+                        document.getElementById('activeChatWindow').classList.add('hidden');
+                        document.getElementById('blankState').classList.remove('hidden');
+                    }
+                }
+            );
+            document.getElementById('confirmModalYesBtn').innerText = "Rimuovi";
+        }
+
+        socket.on('global_status_change', () => {
+            if(myIdentity) {
+                socket.emit('get_online_statuses', (list) => { globalOnlineUsers = list; renderFriendsSidebar(); });
+            }
+        });
+
+        // RENDER DELLA SIDEBAR CON CONTEGGIO MESSAGGI NON LETTI
+        function renderFriendsSidebar() {
+            const container = document.getElementById('friendsContainer');
+            container.innerHTML = "";
+
+            Object.values(friendsData).forEach(friend => {
+                const isOnline = globalOnlineUsers.includes(friend.username.toLowerCase());
+                const isActive = activeChatUser === friend.username;
+
+                // Calcolo esatto dei messaggi non letti ricevuti da questo utente
+                const currentHistory = chatLogs[friend.username.toLowerCase()] || [];
+                const unreadCount = currentHistory.filter(m => m.sender === 'them' && !m.read).length;
+
+                const row = document.createElement('div');
+                row.className = `friend-row ${isActive ? 'active' : ''}`;
+                
+                if(friend.isRequest) {
+                    row.innerHTML = `
+                        <div class="friend-flex-info">
+                            <img src="${friend.avatar}">
+                            <div><strong style="font-size:0.85rem;">${friend.username}</strong><br><span style="font-size:0.75rem; color:var(--text-gray);">Ti ha invitato</span></div>
+                        </div>
+                        <div style="display:flex; gap:6px;">
+                            <button class="req-btn accept" onclick="event.stopPropagation(); handleRequestDecision('${friend.username}', true)">Accetta</button>
+                            <button class="req-btn reject" onclick="event.stopPropagation(); handleRequestDecision('${friend.username}', false)">Rifiuta</button>
+                        </div>
+                    `;
+                } else if(friend.isSentRequest) {
+                    row.innerHTML = `
+                        <div class="friend-flex-info">
+                            <img src="${friend.avatar}">
+                            <div><strong style="font-size:0.85rem;">${friend.username}</strong><br><span style="font-size:0.72rem; color:var(--text-gray); font-style:italic;">Richiesta inviata</span></div>
+                        </div>
+                        <button class="req-btn reject" style="background:#4b5563;" onclick="event.stopPropagation(); cancelSentRequestStream('${friend.username}')">Annulla</button>
+                    `;
+                } else {
+                    row.onclick = () => openChatStream(friend.username);
+                    row.innerHTML = `
+                        <div class="friend-flex-info">
+                            <img src="${friend.avatar}">
+                            <div>
+                                <strong>${friend.username}</strong> 
+                                ${unreadCount > 0 ? `<span class="unread-badge-counter">${unreadCount}</span>` : ''}
+                                <br>
+                                <span style="font-size:0.75rem; color:${isOnline ? '#10b981' : '#64748b'}">● ${isOnline?'online':'offline'}</span>
+                            </div>
+                        </div>
+                        <span class="trash-friend-icon" title="Elimina Amico" onclick="event.stopPropagation(); triggerRemoveFriendDialog('${friend.username}')">
+                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                        </span>
+                    `;
+                }
+                container.appendChild(row);
+            });
+        }
+
+        function openChatStream(username) {
+            activeChatUser = username;
+            socket.emit('set_active_chat', username);
+
+            document.getElementById('blankState').classList.add('hidden');
+            document.getElementById('activeChatWindow').classList.remove('hidden');
+            document.getElementById('chatHeaderImg').src = friendsData[username.toLowerCase()].avatar;
+            document.getElementById('chatHeaderTitle').innerText = friendsData[username.toLowerCase()].username;
+
+            renderActiveMessages();
+
+            (chatLogs[activeChatUser.toLowerCase()] || []).forEach(msg => {
+                if(msg.sender === 'them' && !msg.read) {
+                    socket.emit('message_read_receipt', { msgId: msg.id, fromUser: activeChatUser });
+                }
+            });
+        }
+
+        // COSTRUZIONE SPUNTE GRAFICHE AVANZATE SULL'INTERFACCIA
+        function renderActiveMessages() {
+            const area = document.getElementById('chatScrollArea');
+            area.innerHTML = "";
+
+            const currentMessages = chatLogs[activeChatUser.toLowerCase()] || [];
+            currentMessages.forEach(msg => {
+                const row = document.createElement('div');
+                row.className = `bubble-row ${msg.sender === 'me' ? 'me' : 'them'}`;
+
+                let contentHtml = "";
+                if(msg.type === 'text') contentHtml = `<div>${msg.content}</div>`;
+                else if(msg.type === 'image') contentHtml = `<img class="chat-media-preview" src="${msg.fileData}" onclick="openMediaPreview('${msg.fileData}', 'image')">`;
+                else if(msg.type === 'video') contentHtml = `<video class="chat-media-preview" src="${msg.fileData}" onclick="openMediaPreview('${msg.fileData}', 'video')"></video>`;
+                else if(msg.type === 'file') contentHtml = `<a class="download-doc-link" style="color:#38bdf8; font-size:0.9rem;" download="${msg.content}" href="${msg.fileData}">📁 Documento: ${msg.content}</a>`;
+                else if(msg.type === 'audio') {
+                    contentHtml = `
+                        <div class="custom-audio-player">
+                            <button class="audio-play-btn" onclick="playCustomAudio('${msg.id}', this, '${msg.fileData}')">▶</button>
+                            <div class="audio-waveform"><div class="audio-progress-bar" id="progress-${msg.id}"></div></div>
+                        </div>
+                    `;
+                }
+
+                const trashIconHtml = `<span class="trash-msg-icon" title="Elimina messaggio" onclick="triggerDeleteSingleMessageDialog('${msg.id}')">
+                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                </span>`;
+
+                // Logica visualizzazione grafica spunte a 3 vie
+                let spuntaGrafica = '';
+                let classeSpunta = '';
+
+                if (msg.spunteState === 'sent_offline') {
+                    spuntaGrafica = '✓';
+                    classeSpunta = 'spunta-grigia-singola';
+                } else if (msg.spunteState === 'delivered_online') {
+                    spuntaGrafica = '✓✓';
+                    classeSpunta = 'spunta-grigia-doppia';
+                } else if (msg.spunteState === 'read_blue' || msg.read) {
+                    spuntaGrafica = '✓✓';
+                    classeSpunta = 'spunta-blu-doppia';
+                }
+
+                const metaHtml = `
+                    <div class="msg-meta-line">
+                        <span>${msg.timeLabel}</span>
+                        ${msg.sender === 'me' ? `<span class="status-spunta ${classeSpunta}" id="spunta-${msg.id}">${spuntaGrafica}</span>` : ''}
+                        ${trashIconHtml}
+                    </div>
+                `;
+
+                row.innerHTML = `<div class="bubble-wrapper">${contentHtml + metaHtml}</div>`;
+                area.appendChild(row);
+            });
+            area.scrollTop = area.scrollHeight;
+        }
+
+        function generatePCLocalTimeLabel() {
+            const d = new Date();
+            const giorni = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
+            return `${giorni[d.getDay()]} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        }
+
+        function dispatchText() {
+            const box = document.getElementById('messageWriteBox');
+            const text = box.value.trim();
+            if(!text) return;
+
+            const packet = {
+                id: 'msg-' + Date.now() + Math.random(),
+                type: 'text',
+                content: text,
+                timeLabel: generatePCLocalTimeLabel()
+            };
+
+            socket.emit('send_private_message', { to: activeChatUser, message: packet });
+            box.value = "";
+        }
+
+        socket.on('receive_private_message', ({ sender, message }) => {
+            syncDataFromServer();
+        });
+
+        socket.on('message_status_updated', () => {
+            syncDataFromServer();
+        });
+
+        function uploadAttachment(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            const r = new FileReader();
+            r.onload = function(evt) {
+                let inferredType = 'file';
+                if(file.type.startsWith('image/')) inferredType = 'image';
+                else if(file.type.startsWith('video/')) inferredType = 'video';
+                else if(file.type.startsWith('audio/')) inferredType = 'audio';
+
+                const packet = {
+                    id: 'msg-' + Date.now() + Math.random(),
+                    type: inferredType,
+                    content: file.name,
+                    fileData: evt.target.result,
+                    timeLabel: generatePCLocalTimeLabel()
+                };
+
+                socket.emit('send_private_message', { to: activeChatUser, message: packet });
+            }
+            r.readAsDataURL(file);
+        }
+
+        function openMediaPreview(src, type) {
+            const modal = document.getElementById('mediaPreviewOverlay');
+            const targetBox = document.getElementById('mediaPreviewContent');
+            targetBox.innerHTML = type === 'image' ? `<img src="${src}" class="preview-content-media">` : `<video src="${src}" class="preview-content-media" controls autoplay></video>`;
+            modal.classList.remove('hidden');
+        }
+
+        let currentPlayingAudioObj = null;
+        function playCustomAudio(id, btn, base64Src) {
+            if(currentPlayingAudioObj) {
+                currentPlayingAudioObj.pause();
+                if(currentPlayingAudioObj.linkedBtn) currentPlayingAudioObj.linkedBtn.innerText = "▶";
+            }
+            const sound = new Audio(base64Src);
+            currentPlayingAudioObj = sound;
+            sound.linkedBtn = btn;
+            btn.innerText = "⏸";
+
+            sound.ontimeupdate = () => {
+                const prog = document.getElementById(`progress-${id}`);
+                if(prog) prog.style.width = (sound.currentTime / sound.duration * 100) + '%';
+            };
+            sound.onended = () => btn.innerText = "▶";
+            sound.play();
+        }
+
+        function toggleAudioRecording() {
+            const btn = document.getElementById('audioMicBtn');
+            if(!isVoiceRecording) {
+                navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+                    recStream = stream;
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+                    mediaRecorder.ondataavailable = ev => audioChunks.push(ev.data);
+                    mediaRecorder.onstop = () => {
+                        const blob = new Blob(audioChunks, { type: 'audio/mp3' });
+                        const r = new FileReader();
+                        r.onloadend = () => {
+                            const packet = { id: 'msg-'+Date.now(), type: 'audio', content: 'Vocale', fileData: r.result, timeLabel: generatePCLocalTimeLabel() };
+                            socket.emit('send_private_message', { to: activeChatUser, message: packet });
+                        };
+                        r.readAsDataURL(blob);
+                    };
+                    mediaRecorder.start();
+                    isVoiceRecording = true;
+                    btn.classList.add('recording');
+                });
+            } else {
+                mediaRecorder.stop();
+                recStream.getTracks().forEach(track => track.stop());
+                isVoiceRecording = false;
+                btn.classList.remove('recording');
+            }
+        }
+
+        function triggerCustomConfirmDialog(title, text, callbackConfirm) {
+            document.getElementById('confirmModalTitle').innerText = title;
+            document.getElementById('confirmModalText').innerText = text;
+            const modal = document.getElementById('customConfirmModal');
+            modal.classList.remove('hidden');
+            
+            document.getElementById('confirmModalYesBtn').onclick = function() {
+                callbackConfirm();
+                modal.classList.add('hidden');
+            };
+        }
+
+        function triggerAlertDialog(text) {
+            triggerCustomConfirmDialog("Avviso di Sistema", text, () => {});
+            document.getElementById('confirmModalYesBtn').innerText = "Ok";
+        }
+
+        function triggerDeleteSingleMessageDialog(msgId) {
+            const currentHistory = chatLogs[activeChatUser.toLowerCase()] || [];
+            const foundMsg = currentHistory.find(m => m.id === msgId);
+            
+            let avvisoTesto = "Sei sicuro di voler rimuovere questo messaggio?";
+            if (foundMsg && foundMsg.sender === 'me') {
+                avvisoTesto = "Questo è un tuo messaggio: cancellandolo verrà eliminato definitivamente per tutti i partecipanti.";
+            } else {
+                avvisoTesto = "Questo messaggio appartiene al tuo amico: rimuovendolo sparirà soltanto dal tuo schermo.";
+            }
+
+            triggerCustomConfirmDialog(
+                "Elimina Messaggio", 
+                avvisoTesto, 
+                () => {
+                    socket.emit('delete_single_message', { friendName: activeChatUser, msgId });
+                }
+            );
+            document.getElementById('confirmModalYesBtn').innerText = "Elimina";
+        }
+
+        function triggerClearChatDialog() {
+            if(!activeChatUser) return;
+            triggerCustomConfirmDialog(
+                "Svuota Conversazione", 
+                `Sei sicuro di voler cancellare TUTTI i messaggi salvati nel cloud con ${activeChatUser}?`, 
+                () => {
+                    socket.emit('clear_chat_history', activeChatUser);
+                }
+            );
+            document.getElementById('confirmModalYesBtn').innerText = "Svuota";
+        }
+    </script>
+</body>
+</html>
