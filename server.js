@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
@@ -9,11 +10,32 @@ const io = new Server(server, { maxHttpBufferSize: 2e7 });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-const db = {
+// Configurazione Database Persistente su File JSON
+const dbPath = path.join(__dirname, 'database.json');
+let db = {
     users: {},    
     friends: {},  
     chats: {}     
 };
+
+// Carica i dati all'avvio se il file esiste
+if (fs.existsSync(dbPath)) {
+    try {
+        db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+        console.log("[NexusChat] Database caricato correttamente da file.");
+    } catch (e) {
+        console.error("[NexusChat] Errore nel lettura del file database, inizializzo vuoto.", e);
+    }
+}
+
+// Funzione helper per salvare i dati su disco
+function saveDatabase() {
+    try {
+        fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), 'utf8');
+    } catch (e) {
+        console.error("[NexusChat] Errore durante il salvataggio del database:", e);
+    }
+}
 
 const onlineUsers = {}; // { socketId: username_lowercase }
 const activeChats = {}; // { socketId: friend_username_lowercase }
@@ -33,6 +55,7 @@ io.on('connection', (socket) => {
             db.users[lowerName] = { username: cleanedName, password, avatar };
             db.friends[lowerName] = {};
             db.chats[lowerName] = {};
+            saveDatabase(); // Salva la registrazione
         } else {
             if (!userExists) {
                 return callback({ success: false, error: "Username non trovato." });
@@ -100,6 +123,8 @@ io.on('connection', (socket) => {
         socket.leave(currentLower);
         socket.join(newLower);
 
+        saveDatabase(); // Salva le modifiche profilo
+
         callback({ success: true, user: { username: cleanedNewName, avatar: avatar } });
         io.emit('global_status_change');
     });
@@ -141,6 +166,7 @@ io.on('connection', (socket) => {
             isSentRequest: false
         };
 
+        saveDatabase(); // Salva la richiesta inviata
         io.to(targetLower).emit('sync_database_update');
         callback({ success: true });
     });
@@ -153,6 +179,7 @@ io.on('connection', (socket) => {
         if (db.friends[myLower]) delete db.friends[myLower][targetLower];
         if (db.friends[targetLower]) delete db.friends[targetLower][myLower];
 
+        saveDatabase();
         io.to(targetLower).emit('sync_database_update');
         socket.emit('sync_database_update');
     });
@@ -170,6 +197,7 @@ io.on('connection', (socket) => {
             delete db.friends[senderLower][myLower];
         }
 
+        saveDatabase();
         io.to(senderLower).emit('sync_database_update');
         socket.emit('sync_database_update');
     });
@@ -182,6 +210,7 @@ io.on('connection', (socket) => {
         if (db.friends[myLower]) delete db.friends[myLower][friendLower];
         if (db.friends[friendLower]) delete db.friends[friendLower][myLower];
 
+        saveDatabase();
         io.to(friendLower).emit('sync_database_update');
         socket.emit('sync_database_update');
     });
@@ -195,11 +224,9 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Registra quale chat l'utente sta guardando al momento
     socket.on('set_active_chat', (friendName) => {
         if (friendName) {
             activeChats[socket.id] = friendName.toLowerCase();
-            // Segna come letti i messaggi quando apri la chat
             const myLower = onlineUsers[socket.id];
             const targetLower = friendName.toLowerCase();
             if (myLower && db.chats[myLower] && db.chats[myLower][targetLower]) {
@@ -211,6 +238,7 @@ io.on('connection', (socket) => {
                         if (m.sender === 'me') m.read = true;
                     });
                 }
+                saveDatabase();
                 io.to(targetLower).emit('sync_database_update');
             }
         } else {
@@ -218,7 +246,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // LOGICA AVANZATA DELLE SPUNTE
     socket.on('send_private_message', ({ to, message }) => {
         const senderLower = onlineUsers[socket.id];
         if (!senderLower) return;
@@ -228,7 +255,6 @@ io.on('connection', (socket) => {
         if (!db.chats[senderLower][targetLower]) db.chats[senderLower][targetLower] = [];
         if (!db.chats[targetLower][senderLower]) db.chats[targetLower][senderLower] = [];
 
-        // Verifica stati dell'interlocutore per determinare le spunte
         const isTargetOnline = Object.values(onlineUsers).includes(targetLower);
         
         let targetSocketId = null;
@@ -238,9 +264,9 @@ io.on('connection', (socket) => {
         
         const isTargetOnThisChat = targetSocketId && activeChats[targetSocketId] === senderLower;
 
-        let statusSpunta = 'sent_offline'; // 1 Spunta Grigia
+        let statusSpunta = 'sent_offline'; // 1 spunta grigia
         if (isTargetOnline) {
-            statusSpunta = isTargetOnThisChat ? 'read_blue' : 'delivered_online'; // 2 Blu o 2 Grigie
+            statusSpunta = isTargetOnThisChat ? 'read_blue' : 'delivered_online'; // 2 blu o 2 grigie
         }
 
         const msgForMe = { sender: 'me', ...message, spunteState: statusSpunta, read: (statusSpunta === 'read_blue') };
@@ -248,6 +274,8 @@ io.on('connection', (socket) => {
 
         db.chats[senderLower][targetLower].push(msgForMe);
         db.chats[targetLower][senderLower].push(msgForThem);
+
+        saveDatabase(); // Salva il messaggio nel file JSON
 
         io.to(targetLower).emit('receive_private_message', {
             sender: db.users[senderLower].username,
@@ -265,10 +293,10 @@ io.on('connection', (socket) => {
         if (db.chats[myLower] && db.chats[myLower][targetLower]) {
             db.chats[myLower][targetLower] = [];
         }
+        saveDatabase();
         socket.emit('sync_database_update');
     });
 
-    // LOGICA ASIMMETRICA DI ELIMINAZIONE MESSAGGIO
     socket.on('delete_single_message', ({ friendName, msgId }) => {
         const myLower = onlineUsers[socket.id];
         if (!myLower) return;
@@ -278,16 +306,17 @@ io.on('connection', (socket) => {
             const foundMsg = db.chats[myLower][targetLower].find(m => m.id === msgId);
             if (foundMsg) {
                 if (foundMsg.sender === 'me') {
-                    // È mio: eliminalo per tutti (sia da me che dall'altro)
+                    // È mio: eliminazione asimmetrica globale (per tutti)
                     db.chats[myLower][targetLower] = db.chats[myLower][targetLower].filter(m => m.id !== msgId);
                     if (db.chats[targetLower] && db.chats[targetLower][myLower]) {
                         db.chats[targetLower][myLower] = db.chats[targetLower][myLower].filter(m => m.id !== msgId);
                     }
                     io.to(targetLower).emit('sync_database_update');
                 } else {
-                    // È dell'altro: lo cancello solo dal mio schermo
+                    // È dell'altro: eliminazione asimmetrica locale (solo per me)
                     db.chats[myLower][targetLower] = db.chats[myLower][targetLower].filter(m => m.id !== msgId);
                 }
+                saveDatabase();
             }
         }
         socket.emit('sync_database_update');
@@ -307,6 +336,7 @@ io.on('connection', (socket) => {
             if (msg) { msg.read = true; msg.spunteState = 'read_blue'; }
         }
 
+        saveDatabase();
         io.to(targetLower).emit('message_status_updated', { msgId, viewer: myLower });
     });
 
