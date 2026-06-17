@@ -62,7 +62,7 @@
         .friend-row:hover .trash-friend-icon { opacity: 1; }
         .trash-friend-icon:hover { color: #ef4444; }
 
-        /* Badge Conteggio Notifiche */
+        /* Badge Notifiche */
         .unread-badge-counter { background: #ef4444; color: white; font-size: 0.75rem; font-weight: bold; border-radius: 10px; padding: 2px 7px; min-width: 18px; text-align: center; display: inline-block; }
 
         .chat-panel { flex: 1; display: flex; flex-direction: column; background: var(--bg-dark-main); }
@@ -81,7 +81,7 @@
         
         .msg-meta-line { display: flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 0.7rem; color: var(--text-gray); margin-top: 5px; }
         
-        /* Stili Grafici Assegnati alle Spunte */
+        /* Sistema grafico Spunte */
         .status-spunta { font-weight: bold; font-size: 0.8rem; letter-spacing: -1px; }
         .status-spunta.spunta-grigia-singola { color: #64748b; }
         .status-spunta.spunta-grigia-doppia { color: #94a3b8; }
@@ -150,7 +150,7 @@
             <label>Modifica Username:</label>
             <input type="text" id="editUsernameField" class="form-input" placeholder="Nuovo Username">
             <div style="border-top: 1px solid var(--border-line); margin-top:1rem; padding-top:1rem;">
-                <label style="font-weight:600;">Cambia Password:</label>
+                <label style="font-weight:600;">Cambia Password (Opzionale):</label>
                 <input type="password" id="oldPassField" class="form-input" placeholder="Vecchia Password" style="margin-top: 6px;">
                 <input type="password" id="newPassField" class="form-input" placeholder="Nuova Password">
             </div>
@@ -199,7 +199,7 @@
                     <img id="mySidebarImg" src="">
                     <span id="mySidebarName">-</span>
                 </div>
-                <button class="add-friend-btn" onclick="openAddFriendModal()">+ Aggiungi</button>
+                <button class="add-friend-btn" onclick="openAddFriendModal()">Aggiungi</button>
             </div>
             <div class="list-container" id="friendsContainer"></div>
         </aside>
@@ -251,6 +251,7 @@
 
         let recStream, mediaRecorder, audioChunks = [], isVoiceRecording = false;
 
+        // ACCESSO AUTOMATICO VIA LOCALSTORAGE
         window.onload = function() {
             const savedSession = localStorage.getItem('nx_active_user_session');
             if(savedSession) {
@@ -267,6 +268,8 @@
 
         function initializeAccountSession(userObj, accountPassword) {
             myIdentity = userObj;
+            
+            // Salvataggio sicuro nel browser
             localStorage.setItem('nx_active_user_session', JSON.stringify({ username: myIdentity.username, password: accountPassword }));
             
             document.getElementById('authModal').classList.add('hidden');
@@ -348,8 +351,7 @@
 
             socket.emit('update_full_profile', { newUsername, oldPassword, newPassword, avatar }, (res) => {
                 if(res.success) {
-                    const activeSession = JSON.parse(localStorage.getItem('nx_active_user_session'));
-                    initializeAccountSession(res.user, newPassword ? newPassword : activeSession.password);
+                    initializeAccountSession(res.user, newPassword ? newPassword : JSON.parse(localStorage.getItem('nx_active_user_session')).password);
                     document.getElementById('editProfileModal').classList.add('hidden');
                 } else {
                     triggerAlertDialog(res.error);
@@ -425,7 +427,7 @@
             }
         });
 
-        // RENDER DELLA SIDEBAR CON CONTEGGIO MESSAGGI NON LETTI
+        // NOTIFICHE CON CONTEGGIO NUMERICO DEI MESSAGGI NELLA SIDEBAR
         function renderFriendsSidebar() {
             const container = document.getElementById('friendsContainer');
             container.innerHTML = "";
@@ -434,7 +436,6 @@
                 const isOnline = globalOnlineUsers.includes(friend.username.toLowerCase());
                 const isActive = activeChatUser === friend.username;
 
-                // Calcolo esatto dei messaggi non letti ricevuti da questo utente
                 const currentHistory = chatLogs[friend.username.toLowerCase()] || [];
                 const unreadCount = currentHistory.filter(m => m.sender === 'them' && !m.read).length;
 
@@ -445,7 +446,7 @@
                     row.innerHTML = `
                         <div class="friend-flex-info">
                             <img src="${friend.avatar}">
-                            <div><strong style="font-size:0.85rem;">${friend.username}</strong><br><span style="font-size:0.75rem; color:var(--text-gray);">Ti ha invitato</span></div>
+                            <div><strong style="font-size:0.85rem;">${friend.username}</strong><br><span style="font-size:0.75rem; color:var(--text-gray);">Ti ha cercato</span></div>
                         </div>
                         <div style="display:flex; gap:6px;">
                             <button class="req-btn accept" onclick="event.stopPropagation(); handleRequestDecision('${friend.username}', true)">Accetta</button>
@@ -499,7 +500,7 @@
             });
         }
 
-        // COSTRUZIONE SPUNTE GRAFICHE AVANZATE SULL'INTERFACCIA
+        // COSTRUZIONE GRAFICA DELLE 3 VARIANTI DI SPUNTE
         function renderActiveMessages() {
             const area = document.getElementById('chatScrollArea');
             area.innerHTML = "";
@@ -527,7 +528,6 @@
                     <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
                 </span>`;
 
-                // Logica visualizzazione grafica spunte a 3 vie
                 let spuntaGrafica = '';
                 let classeSpunta = '';
 
@@ -681,11 +681,12 @@
             document.getElementById('confirmModalYesBtn').innerText = "Ok";
         }
 
+        // ELIMINAZIONE MESSAGGIO CON RIGIDA LOGICA ASIMMETRICA
         function triggerDeleteSingleMessageDialog(msgId) {
             const currentHistory = chatLogs[activeChatUser.toLowerCase()] || [];
             const foundMsg = currentHistory.find(m => m.id === msgId);
             
-            let avvisoTesto = "Sei sicuro di voler rimuovere questo messaggio?";
+            let avvisoTesto = "Sei sicuro?";
             if (foundMsg && foundMsg.sender === 'me') {
                 avvisoTesto = "Questo è un tuo messaggio: cancellandolo verrà eliminato definitivamente per tutti i partecipanti.";
             } else {
